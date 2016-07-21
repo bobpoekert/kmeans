@@ -64,6 +64,7 @@ int kmeans(int iterations,
            thrust::device_vector<T>& centroids,
            thrust::device_vector<T>& distances,
            bool init_from_labels=true,
+           bool debug=true,
            double threshold=0.000001) {
     thrust::device_vector<T> data_dots(n);
     thrust::device_vector<T> centroid_dots(n);
@@ -86,13 +87,16 @@ int kmeans(int iterations,
         
         detail::find_centroids(n, d, k, data, labels, centroids);
         T distance_sum = thrust::reduce(distances.begin(), distances.end());
-        std::cout << "Iteration " << i << " produced " << changes
-                  << " changes, and total distance is " << distance_sum << std::endl;
-
+        if (debug) {
+            std::cout << "Iteration " << i << " produced " << changes
+                      << " changes, and total distance is " << distance_sum << std::endl;
+        }
         if (i > 0) {
             T delta = distance_sum / prior_distance_sum;
             if (delta > 1 - threshold) {
-                std::cout << "Threshold triggered, terminating iterations early" << std::endl;
+                if (debug) {
+                    std::cout << "Threshold triggered, terminating iterations early" << std::endl;
+                }
                 return i + 1;
             }
         }
