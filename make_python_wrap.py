@@ -37,6 +37,7 @@ thrust::host_vector<%(T)s> numpy_to_thrust_%(T)s(PyArrayObject *data) {
 
 def kmeans(T):
     return '''
+namespace kmeans {
 %(to_thrust_def)s
 
 PyObject *py_kmeans_%(T)s(
@@ -84,7 +85,7 @@ PyObject *py_kmeans_%(T)s(
     PyObject *res_centroids = PyArray_SimpleNewFromData(2, res_dims, data_typenum, host_centroids_ptr);
 
     return res_centroids;
-
+}
 }''' % dict(T=T, to_thrust_def=numpy_to_thrust(T), to_thrust='numpy_to_thrust_%s' % T)
 
 npy_types = (
@@ -158,7 +159,7 @@ extern "C" {
         function_definitions.append(kmeans(type_cname))
         cases.append('''
                 case %d:
-                    return py_kmeans_%s(%s);
+                    return kmeans::py_kmeans_%s(%s);
         ''' % (type_id, type_cname, arglist))
 
     return '%s\n%s' % ('\n'.join(function_definitions), template % '\n'.join(cases))

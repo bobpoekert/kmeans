@@ -1,6 +1,7 @@
 import  os
 from os.path import join as pjoin
 from setuptools import setup
+from subprocess import check_call
 from distutils.extension import Extension
 from Cython.Distutils import build_ext
 import subprocess
@@ -58,11 +59,13 @@ try:
 except AttributeError:
     numpy_include = numpy.get_numpy_include()
 
+check_call(['nvcc', '-arch=sm_35', '-Xptxas', '-v', '-c', '-o', 'labels.o', 'labels.cu', '--compiler-options', "'-fPIC'"])
 
 ext = Extension('kmeans',
                 sources=['python_wrap.cu'],
                 library_dirs=[CUDA['lib64']],
-                libraries=['cudart'],
+                libraries=['cudart', 'cublas'],
+                extra_objects=['labels.o'],
                 language='c++',
                 runtime_library_dirs=[CUDA['lib64']],
                 # this syntax is specific to this build system
@@ -71,9 +74,8 @@ ext = Extension('kmeans',
                 extra_compile_args={'gcc': [],
                                     'nvcc': [
                                         '-arch=sm_35',
-                                        '--ptxas-options=-v', '-c',
-                                        '--compiler-options', "'-fPIC'",
-                                        '-lcublas']},
+                                        '-Xptxas', '-v', '-c',
+                                        '--compiler-options', "'-fPIC'", '-lcublas']},
                 include_dirs = [numpy_include, CUDA['include']])
 
 def customize_compiler_for_nvcc(self):
