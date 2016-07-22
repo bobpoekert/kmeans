@@ -10,6 +10,8 @@ prelude = '''
 typedef float float32_t;
 typedef double float64_t;
 
+#define argument_error(message) PyErr_SetString(PyExc_TypeError, message);
+
 '''
 
 def numpy_to_thrust(T):
@@ -17,18 +19,16 @@ def numpy_to_thrust(T):
 thrust::host_vector<%(T)s> numpy_to_thrust_%(T)s(PyArrayObject *data) {
 
     if (PyArray_ITEMSIZE(data) != sizeof(%(T)s)) {
-        PyErr_BadValue("wrong array type (expecting %(T)s)");
+        argument_error("wrong array type (expecting %(T)s)");
         throw 0;
     }
-
-    int n_dims = PyArray_NDIM(data);
 
     npy_intp buffer_size = PyArray_NBYTES(data);
     %(T)s *data_buffer = (%(T)s *) PyArray_DATA(data);
 
     thrust::host_vector<%(T)s> host_data(buffer_size / sizeof(%(T)s));
     for (size_t i=0; i < buffer_size; i++) {
-        host_buffer[i] = data_buffer[i];
+        host_data[i] = data_buffer[i];
     }
 
     return host_data;
@@ -47,11 +47,11 @@ PyObject *py_kmeans_%(T)s(
     double threshold) {
 
     int data_typenum = PyArray_TYPE(data);
-    int labels_typenum = PyArray_TYPE(labels);
     int ndim = PyArray_NDIM(data);
+    void *host_centroids_ptr;
 
     if (ndim != 2) {
-        PyErr_BadArgument("data must be rows of vectors (2d matrix)");
+        argument_error("data must be rows of vectors (2d matrix)");
         throw 0;
     }
 
@@ -59,47 +59,43 @@ PyObject *py_kmeans_%(T)s(
     int d = PyArray_DIM(data, 1);
 
     Py_BEGIN_ALLOW_THREADS
-    try {
-        thrust::host_vector<%(T)s> host_data = %(to_thrust)s(data);
-        thrust::host_vector<int> host_labels = numpy_to_thrust_int(labels);
 
-        thrust::device_vector<%(T)s> device_data = host_data;
-        thrust::device_vector<int> device_labels = host_labels;
+    thrust::host_vector<%(T)s> host_data = %(to_thrust)s(data);
+    thrust::host_vector<int> host_labels = numpy_to_thrust_int(labels);
 
-        thrust::device_vector<%(T)s> centroids(k * d);
-        thrust::device_vecotr<%(T)s> distances(n);
+    thrust::device_vector<%(T)s> device_data = host_data;
+    thrust::device_vector<int> device_labels = host_labels;
 
-        kmeans(
+    thrust::device_vector<%(T)s> device_centroids(k * d);
+    thrust::device_vector<%(T)s> device_distances(n);
+
+    kmeans::kmeans(
         iterations, n, d, k, device_data, device_labels, device_centroids, device_distances,
         true, false, threshold);
 
-        thrust::host_vector<%(T)s> host_centroids = centroids;
+    thrust::host_vector<%(T)s> host_centroids(device_centroids);
+    host_centroids_ptr = thrust::raw_pointer_cast(host_centroids.data());
 
-        npy_intp res_dims[2];
-        res_dims[0] = k;
-        res_dims[1] = d;
-        PyObject *res_centroids = PyArray_SimpleNewFromData(2, res_dims, data_typenum, host_centroids::data());
+    Py_END_ALLOW_THREADS
 
-        return res_centroids;
+    npy_intp res_dims[2];
+    res_dims[0] = k;
+    res_dims[1] = d;
+    PyObject *res_centroids = PyArray_SimpleNewFromData(2, res_dims, data_typenum, host_centroids_ptr);
 
-
-    } catch(...) {
-        return 0;
-    } finally {
-        Py_END_ALLOW_THREADS
-    }
+    return res_centroids;
 
 }''' % dict(T=T, to_thrust_def=numpy_to_thrust(T), to_thrust='numpy_to_thrust_%s' % T)
 
 npy_types = (
-    'int8',
-    'int16',
-    'int32',
-    'int64',
-    'uint8',
-    'uint16',
-    'uint32',
-    'uint64',
+    #'int8',
+    #'int16',
+    #'int32',
+    #'int64',
+    #'uint8',
+    #'uint16',
+    #'uint32',
+    #'uint64',
     'float32',
     'float64'
 )
@@ -107,7 +103,7 @@ npy_types = (
 npy_types = set(map(np.dtype, npy_types))
 
 def dispatcher():
-    arglist = 'iterations, k, data, labels, threshold'
+    arglist = 'iterations, k, data_arr, labels_arr, threshold'
 
     template = '''
 extern "C" {
@@ -118,17 +114,17 @@ extern "C" {
         int k;
         double threshold;
 
-        if (!PyArgs_ParseTuple(args, "ooiid", &data, &labels, &iterations, &k, &threshold)) {
+        if (!PyArg_ParseTuple(args, "ooiid", &data, &labels, &iterations, &k, &threshold)) {
             return 0;
         }
 
         if (!PyArray_Check(data)) {
-            PyErr_BadValue("data is not a numpy array");
+            argument_error("data is not a numpy array");
             return 0;
         }
 
         if (!PyArray_Check(labels)) {
-            PyErr_BadValue("labels is not a numpy array");
+            argument_error("labels is not a numpy array");
             return 0;
         }
 
@@ -138,11 +134,10 @@ extern "C" {
         switch(PyArray_TYPE(data_arr)) {
             %s
             default:
-                PyErr_BadValue("unknown array type");
+                argument_error("unknown array type");
                 return 0;
         }
     }
-
 
     static PyMethodDef KmeansMethods[] = {
         {"kmeans", py_kmeans, METH_VARARGS, "run kmeans clustering using CUDA"},
