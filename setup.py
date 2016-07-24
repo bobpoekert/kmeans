@@ -71,11 +71,11 @@ ext = Extension('kmeans',
                 # this syntax is specific to this build system
                 # we're only going to use certain compiler args with nvcc and not with gcc
                 # the implementation of this trick is in customize_compiler() below
-                extra_compile_args={'gcc': [],
+                extra_compile_args={'gcc': ['-g'],
                                     'nvcc': [
                                         '-arch=sm_35',
                                         '-Xptxas', '-v', '-c',
-                                        '--compiler-options', "'-fPIC'", '-lcublas']},
+                                        '--compiler-options', "'-fPIC' '-g'", '-lcublas']},
                 include_dirs = [numpy_include, CUDA['include']])
 
 def customize_compiler_for_nvcc(self):
