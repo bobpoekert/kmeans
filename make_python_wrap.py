@@ -72,7 +72,7 @@ PyObject *py_kmeans_%(T)s(
 
         thrust::device_vector<%(T)s> device_centroids(k * d);
         thrust::device_vector<%(T)s> device_distances(n);
-        
+
         kmeans::kmeans(
             iterations, n, d, k, device_data, device_labels, device_centroids, device_distances,
             true, false, threshold);
@@ -89,7 +89,7 @@ PyObject *py_kmeans_%(T)s(
     } catch(std::bad_alloc &e) {
         PyErr_SetString(PyExc_MemoryError, "Out of GPU memory");
         return 0;
-    } catch(std::runtime_error &e) {
+    } catch(std::exception &e) {
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return 0;
     } catch(...) {
@@ -177,8 +177,15 @@ extern "C" {
         return res;
     }
 
+    PyObject *device_count(PyObject *self) {
+        int device_count;
+        cudaGetDeviceCount(&device_count);
+        return PyInt_FromLong((long) device_count);
+    }
+
     static PyMethodDef KmeansMethods[] = {
         {"kmeans", py_kmeans, METH_VARARGS, "run kmeans clustering using CUDA"},
+        {"device_count", (PyCFunction) device_count, METH_NOARGS, "returns the number of CUDA-capable devices installed"},
         {NULL, NULL, 0, NULL}
     };
 
