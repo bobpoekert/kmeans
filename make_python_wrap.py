@@ -86,7 +86,14 @@ PyObject *py_kmeans_%(T)s(
         PyObject *res_centroids = PyArray_SimpleNewFromData(2, res_dims, data_typenum, host_centroids_ptr);
 
         return res_centroids;
+    } catch(std::bad_alloc &e) {
+        PyErr_SetString(PyExc_MemoryError, "Out of GPU memory");
+        return 0;
+    } catch(std::runtime_error &e) {
+        PyErr_SetString(PyExc_RuntimeError, e.what());
+        return 0;
     } catch(...) {
+        PyErr_SetString(PyExc_RuntimeError, "Caught unexpected C++ exception");
         return 0;
     }
 }
