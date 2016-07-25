@@ -3,6 +3,7 @@ import numpy as np
 prelude = '''
 #include <stdio.h>
 #include <Python.h>
+#include <cuda_runtime.h>
 #include <numpy/arrayobject.h>
 #include <thrust/device_vector.h>
 #include <stdint.h>
@@ -25,8 +26,6 @@ thrust::host_vector<%(T)s> numpy_to_thrust_%(T)s(PyArrayObject *data) {
     }
 
     npy_intp buffer_size = PyArray_NBYTES(data);
-    printf("\\n%%d\\n", buffer_size);
-    fflush(stdout);
     %(T)s *data_buffer = (%(T)s *) PyArray_DATA(data);
 
     thrust::host_vector<%(T)s> host_data(buffer_size / sizeof(%(T)s));
@@ -86,6 +85,9 @@ PyObject *py_kmeans_%(T)s(
         PyObject *res_centroids = PyArray_SimpleNewFromData(2, res_dims, data_typenum, host_centroids_ptr);
 
         return res_centroids;
+    } catch(thrust::system::system_error &e) {
+        PyErr_SetString(PyExc_RuntimeError, e.what());
+        return 0;
     } catch(std::bad_alloc &e) {
         PyErr_SetString(PyExc_MemoryError, "Out of GPU memory");
         return 0;
@@ -100,14 +102,6 @@ PyObject *py_kmeans_%(T)s(
 }''' % dict(T=T, to_thrust_def=numpy_to_thrust(T), to_thrust='numpy_to_thrust_%s' % T)
 
 npy_types = (
-    #'int8',
-    #'int16',
-    #'int32',
-    #'int64',
-    #'uint8',
-    #'uint16',
-    #'uint32',
-    #'uint64',
     'float32',
     'float64'
 )
@@ -119,57 +113,38 @@ def dispatcher():
 
     template = '''
 extern "C" {
+#define check(cond, message) \
+        if (cond) {\
+            PyErr_SetString(PyExc_RuntimeError, message);\
+            Py_XDECREF(data_arr);\
+            Py_XDECREF(labels_arr);\
+            return 0;\
+        }
     static PyObject *py_kmeans(PyObject *self, PyObject *args) {
-        printf("0");
-        PyArrayObject *data_arr;
-        PyArrayObject *labels_arr;
+        PyArrayObject *data_arr = 0;
+        PyArrayObject *labels_arr = 0;
         int iterations;
         int k;
         double threshold;
 
-        printf("%%p %%p\\n", PyArray_Type, &PyArray_Type);
-        fflush(stdout);
         if (!PyArg_ParseTuple(args, "O!O!iid",
             &PyArray_Type, &data_arr,
             &PyArray_Type, &labels_arr, &iterations, &k, &threshold)) {
             return 0;
         }
-        printf("b\\n");
-        fflush(stdout);
 
-        fflush(stdout);
-        if (data_arr->ob_type != &PyArray_Type) {
-            printf("2\\n");
-            fflush(stdout);
-            argument_error("data is not a numpy array");
-            Py_XDECREF(data_arr);
-            Py_XDECREF(labels_arr);
-            return 0;
-        }
+        check(!PyArray_ISCARRAY(data_arr), "data is not C contiguous")
+        check(!PyArray_ISCARRAY(labels_arr), "labels is not C contiguous")
+        check(PyArray_TYPE(labels_arr) != %(int32_id)s, "labels is not np.int32")
 
-        printf("c");
-        fflush(stdout);
-
-        if (labels_arr->ob_type != &PyArray_Type) {
-            argument_error("labels is not a numpy array");
-            Py_XDECREF(data_arr);
-            Py_XDECREF(labels_arr);
-            return 0;
-        }
-
-        printf("d");
-        fflush(stdout);
 
         PyObject *res = 0;
 
         switch(PyArray_TYPE(data_arr)) {
-            %s
+            %(cases)s
             default:
                 argument_error("unknown array type");
         }
-
-        printf("e");
-        fflush(stdout);
 
         Py_XDECREF(data_arr);
         Py_XDECREF(labels_arr);
@@ -183,8 +158,46 @@ extern "C" {
         return PyInt_FromLong((long) device_count);
     }
 
+    PyObject *device_props(PyObject *self, PyObject *args) {
+        int device_id = 0;
+        if (!PyArg_ParseTuple(args, "i", &device_id)) {
+            return 0;
+        }
+        cudaDeviceProp props;
+        if(cudaGetDeviceProperties(&props, device_id) != cudaSuccess) {
+            PyErr_SetString(PyExc_IndexError, "invalid device id");
+            return 0;
+        }
+
+        return Py_BuildValue("{s:i, s:i, s:i, s:i, s:i, s:i, s:(i,i,i), s:(i,i,i), s:(i,i), s:i, s:i, s:i, s:i, s:i, s:i, s:i, s:i, s:i, s:i, s:i, s:i}",
+            "global_mem", (int) props.totalGlobalMem,
+            "shared_mem_per_block", (int) props.sharedMemPerBlock,
+            "regs_per_block", (int) props.regsPerBlock,
+            "warp_size", (int) props.warpSize,
+            "mem_pitch", (int) props.memPitch,
+            "max_threads_per_block", (int) props.maxThreadsPerBlock,
+            "max_threads_dim",
+                (int) (props.maxThreadsDim[0]), (int) (props.maxThreadsDim[1]), (int) (props.maxThreadsDim[2]),
+            "max_grid_size",
+                (int) (props.maxGridSize[0]), (int) (props.maxGridSize[1]), (int) (props.maxGridSize[2]),
+            "version", (int) props.major, (int) props.minor,
+            "clock_rate", (int) props.clockRate,
+            "texture_alignment", (int) props.textureAlignment,
+            "device_overlap", (int) props.deviceOverlap,
+            "multi_processor_count", (int) props.multiProcessorCount,
+            "kernel_exec_timeout_enabled", (int) props.kernelExecTimeoutEnabled,
+            "integrated", (int) props.integrated,
+            "can_map_host_memory", (int) props.canMapHostMemory,
+            "compute_mode", (int) props.computeMode,
+            "concurrent_kernels", (int) props.concurrentKernels,
+            "ecc_enabled", (int) props.ECCEnabled,
+            "tcc_driver", (int) props.tccDriver);
+
+    }
+
     static PyMethodDef KmeansMethods[] = {
         {"kmeans", py_kmeans, METH_VARARGS, "run kmeans clustering using CUDA"},
+        {"device_props", device_props, METH_VARARGS, "takes a CUDA device id, and returns a dict of info about it"},
         {"device_count", (PyCFunction) device_count, METH_NOARGS, "returns the number of CUDA-capable devices installed"},
         {NULL, NULL, 0, NULL}
     };
@@ -208,7 +221,8 @@ extern "C" {
                     break;
         ''' % (type_id, type_cname, arglist))
 
-    return '%s\n%s' % ('\n'.join(function_definitions), template % '\n'.join(cases))
+    return '%s\n%s' % ('\n'.join(function_definitions),
+            template % {'cases':'\n'.join(cases), 'int32_id':np.dtype('int32').num})
 
 def run(outf):
     outf.write(prelude)
