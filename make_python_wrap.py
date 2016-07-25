@@ -169,29 +169,8 @@ extern "C" {
             return 0;
         }
 
-        return Py_BuildValue("{s:i, s:i, s:i, s:i, s:i, s:i, s:(i,i,i), s:(i,i,i), s:(i,i), s:i, s:i, s:i, s:i, s:i, s:i, s:i, s:i, s:i, s:i, s:i, s:i}",
-            "global_mem", (int) props.totalGlobalMem,
-            "shared_mem_per_block", (int) props.sharedMemPerBlock,
-            "regs_per_block", (int) props.regsPerBlock,
-            "warp_size", (int) props.warpSize,
-            "mem_pitch", (int) props.memPitch,
-            "max_threads_per_block", (int) props.maxThreadsPerBlock,
-            "max_threads_dim",
-                (int) (props.maxThreadsDim[0]), (int) (props.maxThreadsDim[1]), (int) (props.maxThreadsDim[2]),
-            "max_grid_size",
-                (int) (props.maxGridSize[0]), (int) (props.maxGridSize[1]), (int) (props.maxGridSize[2]),
-            "version", (int) props.major, (int) props.minor,
-            "clock_rate", (int) props.clockRate,
-            "texture_alignment", (int) props.textureAlignment,
-            "device_overlap", (int) props.deviceOverlap,
-            "multi_processor_count", (int) props.multiProcessorCount,
-            "kernel_exec_timeout_enabled", (int) props.kernelExecTimeoutEnabled,
-            "integrated", (int) props.integrated,
-            "can_map_host_memory", (int) props.canMapHostMemory,
-            "compute_mode", (int) props.computeMode,
-            "concurrent_kernels", (int) props.concurrentKernels,
-            "ecc_enabled", (int) props.ECCEnabled,
-            "tcc_driver", (int) props.tccDriver);
+        return PyString_FromStringAndSize((char *) &props, sizeof(cudaDeviceProp));
+
 
     }
 
@@ -202,8 +181,8 @@ extern "C" {
         {NULL, NULL, 0, NULL}
     };
 
-    PyMODINIT_FUNC initkmeans(void) {
-        (void) Py_InitModule("kmeans", KmeansMethods);
+    PyMODINIT_FUNC init_kmeans(void) {
+        (void) Py_InitModule("_kmeans", KmeansMethods);
         import_array();
     }
 }

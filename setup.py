@@ -61,7 +61,7 @@ except AttributeError:
 
 check_call(['nvcc', '-arch=sm_35', '-Xptxas', '-v', '-c', '-o', 'labels.o', 'labels.cu', '--compiler-options', "'-fPIC'"])
 
-ext = Extension('kmeans',
+ext = Extension('_kmeans',
                 sources=['python_wrap.cu'],
                 library_dirs=[CUDA['lib64']],
                 libraries=['cudart', 'cublas'],
