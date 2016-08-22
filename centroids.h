@@ -126,9 +126,9 @@ void find_centroids(int n, int d, int k,
                  thrust::counting_iterator<int>(n),
                  indices.begin());
     //Bring all labels with the same value together
-    thrust::sort_by_key(labels.begin(),
+    /*thrust::sort_by_key(labels.begin(),
                         labels.end(),
-                        indices.begin());
+                        indices.begin());*/
 
     //Initialize centroids to all zeros
     thrust::fill(centroids.begin(),

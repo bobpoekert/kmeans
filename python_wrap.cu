@@ -1,6 +1,4 @@
-import numpy as np
 
-prelude = '''
 #include <stdio.h>
 #include <Python.h>
 #include <cuda_runtime.h>
@@ -44,33 +42,45 @@ PyObject *pyarray_from_data(size_t n_dims, npy_intp *sizes, int typenum, size_t 
 }
 
 
-'''
 
-def numpy_to_thrust(T):
-    return '''
-thrust::host_vector<%(T)s> numpy_to_thrust_%(T)s(PyArrayObject *data) {
 
-    if (PyArray_ITEMSIZE(data) != sizeof(%(T)s)) {
-        argument_error("wrong array type (expecting %(T)s)");
+thrust::host_vector<int> numpy_to_thrust_int(PyArrayObject *data) {
+
+    if (PyArray_ITEMSIZE(data) != sizeof(int)) {
+        argument_error("wrong array type (expecting int)");
         throw 0;
     }
 
     npy_intp buffer_size = PyArray_NBYTES(data);
-    %(T)s *data_buffer = (%(T)s *) PyArray_DATA(data);
+    int *data_buffer = (int *) PyArray_DATA(data);
 
-    thrust::host_vector<%(T)s> host_data(buffer_size / sizeof(%(T)s));
-    thrust::copy(data_buffer, data_buffer + (buffer_size / sizeof(%(T)s)), host_data.begin());
+    thrust::host_vector<int> host_data(buffer_size / sizeof(int));
+    thrust::copy(data_buffer, data_buffer + (buffer_size / sizeof(int)), host_data.begin());
 
     return host_data;
 }
-''' % locals()
 
-def kmeans(T):
-    return '''
+
 namespace kmeans {
-%(to_thrust_def)s
 
-PyObject *py_kmeans_%(T)s(
+thrust::host_vector<float64_t> numpy_to_thrust_float64_t(PyArrayObject *data) {
+
+    if (PyArray_ITEMSIZE(data) != sizeof(float64_t)) {
+        argument_error("wrong array type (expecting float64_t)");
+        throw 0;
+    }
+
+    npy_intp buffer_size = PyArray_NBYTES(data);
+    float64_t *data_buffer = (float64_t *) PyArray_DATA(data);
+
+    thrust::host_vector<float64_t> host_data(buffer_size / sizeof(float64_t));
+    thrust::copy(data_buffer, data_buffer + (buffer_size / sizeof(float64_t)), host_data.begin());
+
+    return host_data;
+}
+
+
+PyObject *py_kmeans_float64_t(
     int iterations,
     int k,
     PyArrayObject *data,
@@ -89,20 +99,20 @@ PyObject *py_kmeans_%(T)s(
 
     try {
 
-        thrust::host_vector<%(T)s> host_data = %(to_thrust)s(data);
+        thrust::host_vector<float64_t> host_data = numpy_to_thrust_float64_t(data);
         thrust::host_vector<int> host_labels = numpy_to_thrust_int(labels);
 
-        thrust::device_vector<%(T)s> device_data = host_data;
+        thrust::device_vector<float64_t> device_data = host_data;
         thrust::device_vector<int> device_labels = host_labels;
 
-        thrust::device_vector<%(T)s> device_centroids(k * d);
-        thrust::device_vector<%(T)s> device_distances(n);
+        thrust::device_vector<float64_t> device_centroids(k * d);
+        thrust::device_vector<float64_t> device_distances(n);
 
         kmeans::kmeans(
             iterations, n, d, k, device_data, device_labels, device_centroids, device_distances,
             true, false, threshold);
 
-        thrust::host_vector<%(T)s> host_centroids(device_centroids);
+        thrust::host_vector<float64_t> host_centroids(device_centroids);
 
         thrust::host_vector<int> host_labels_res(device_labels);
 
@@ -115,7 +125,7 @@ PyObject *py_kmeans_%(T)s(
         res_dims[0] = k;
         res_dims[1] = d;
 
-        PyObject *res_centroids = pyarray_from_data(2, res_dims, %(typenum)s, sizeof(%(T)s), host_centroids.data());
+        PyObject *res_centroids = pyarray_from_data(2, res_dims, 12, sizeof(float64_t), host_centroids.data());
         if (!res_centroids) return 0;
 
         npy_intp label_dims[1];
@@ -138,32 +148,99 @@ PyObject *py_kmeans_%(T)s(
         return 0;
     }
 }
-}''' % dict(
-        T=T, typenum=typenum(T),
-        to_thrust_def=numpy_to_thrust(T), to_thrust='numpy_to_thrust_%s' % T)
+}
 
-npy_types = (
-    'float32',
-    'float64'
-)
+namespace kmeans {
 
-npy_types = set(map(np.dtype, npy_types))
+thrust::host_vector<float32_t> numpy_to_thrust_float32_t(PyArrayObject *data) {
 
-def typenum(T):
-    return np.dtype(T.split('_')[0]).num
+    if (PyArray_ITEMSIZE(data) != sizeof(float32_t)) {
+        argument_error("wrong array type (expecting float32_t)");
+        throw 0;
+    }
 
-def dispatcher():
-    arglist = 'iterations, k, data_arr, labels_arr, threshold'
+    npy_intp buffer_size = PyArray_NBYTES(data);
+    float32_t *data_buffer = (float32_t *) PyArray_DATA(data);
 
-    template = '''
-extern "C" {
-#define check(cond, message) \
-        if (cond) {\
-            PyErr_SetString(PyExc_RuntimeError, message);\
-            Py_XDECREF(data_arr);\
-            Py_XDECREF(labels_arr);\
-            return 0;\
+    thrust::host_vector<float32_t> host_data(buffer_size / sizeof(float32_t));
+    thrust::copy(data_buffer, data_buffer + (buffer_size / sizeof(float32_t)), host_data.begin());
+
+    return host_data;
+}
+
+
+PyObject *py_kmeans_float32_t(
+    int iterations,
+    int k,
+    PyArrayObject *data,
+    PyArrayObject *labels,
+    double threshold) {
+
+    int ndim = PyArray_NDIM(data);
+
+    if (ndim != 2) {
+        argument_error("data must be rows of vectors (2d matrix)");
+        return 0;
+    }
+
+    int n = PyArray_DIM(data, 0);
+    int d = PyArray_DIM(data, 1);
+
+    try {
+
+        thrust::host_vector<float32_t> host_data = numpy_to_thrust_float32_t(data);
+        thrust::host_vector<int> host_labels = numpy_to_thrust_int(labels);
+
+        thrust::device_vector<float32_t> device_data = host_data;
+        thrust::device_vector<int> device_labels = host_labels;
+
+        thrust::device_vector<float32_t> device_centroids(k * d);
+        thrust::device_vector<float32_t> device_distances(n);
+
+        kmeans::kmeans(
+            iterations, n, d, k, device_data, device_labels, device_centroids, device_distances,
+            true, false, threshold);
+
+        thrust::host_vector<float32_t> host_centroids(device_centroids);
+
+        thrust::host_vector<int> host_labels_res(device_labels);
+
+        if (host_centroids.size() != k*d) {
+            PyErr_SetString(PyExc_RuntimeError, "incorrect size for host_centroids!!!!(internal error)");
+            return 0;
         }
+
+        npy_intp res_dims[2];
+        res_dims[0] = k;
+        res_dims[1] = d;
+
+        PyObject *res_centroids = pyarray_from_data(2, res_dims, 11, sizeof(float32_t), host_centroids.data());
+        if (!res_centroids) return 0;
+
+        npy_intp label_dims[1];
+        label_dims[0] = d;
+        PyObject *res_labels = pyarray_from_data(1, label_dims, 5, sizeof(int), host_labels_res.data());
+        if (!res_labels) return 0;
+
+        return Py_BuildValue("(O,O)", res_centroids, res_labels);
+    } catch(thrust::system::system_error &e) {
+        PyErr_SetString(PyExc_RuntimeError, e.what());
+        return 0;
+    } catch(std::bad_alloc &e) {
+        PyErr_SetString(PyExc_MemoryError, "Out of GPU memory");
+        return 0;
+    } catch(std::exception &e) {
+        PyErr_SetString(PyExc_RuntimeError, e.what());
+        return 0;
+    } catch(...) {
+        PyErr_SetString(PyExc_RuntimeError, "Caught unexpected C++ exception");
+        return 0;
+    }
+}
+}
+
+extern "C" {
+#define check(cond, message)         if (cond) {            PyErr_SetString(PyExc_RuntimeError, message);            Py_XDECREF(data_arr);            Py_XDECREF(labels_arr);            return 0;        }
     static PyObject *py_kmeans(PyObject *self, PyObject *args) {
         PyArrayObject *data_arr = 0;
         PyArrayObject *labels_arr = 0;
@@ -179,12 +256,21 @@ extern "C" {
 
         check(!PyArray_ISCARRAY(data_arr), "data is not C contiguous")
         check(!PyArray_ISCARRAY(labels_arr), "labels is not C contiguous")
-        check(PyArray_TYPE(labels_arr) != %(int32_id)s, "labels is not np.int32")
+        check(PyArray_TYPE(labels_arr) != 5, "labels is not np.int32")
 
         PyObject *res = 0;
 
         switch(PyArray_TYPE(data_arr)) {
-            %(cases)s
+            
+                case 12:
+                    res =  kmeans::py_kmeans_float64_t(iterations, k, data_arr, labels_arr, threshold);
+                    break;
+        
+
+                case 11:
+                    res =  kmeans::py_kmeans_float32_t(iterations, k, data_arr, labels_arr, threshold);
+                    break;
+        
             default:
                 argument_error("unknown array type");
         }
@@ -240,30 +326,4 @@ extern "C" {
         import_array();
     }
 }
-    '''
-
-    function_definitions = [numpy_to_thrust('int')]
-    cases = []
-    for dtype in npy_types:
-        type_id = dtype.num
-        type_cname = '%s_t' % dtype.name
-        function_definitions.append(kmeans(type_cname))
-        cases.append('''
-                case %d:
-                    res =  kmeans::py_kmeans_%s(%s);
-                    break;
-        ''' % (type_id, type_cname, arglist))
-
-    return '%s\n%s' % ('\n'.join(function_definitions),
-            template % {'cases':'\n'.join(cases), 'int32_id':np.dtype('int32').num})
-
-def run(outf):
-    outf.write(prelude)
-    outf.write('\n')
-    outf.write(dispatcher())
-
-
-if __name__ == '__main__':
-    import sys
-    with open(sys.argv[1], 'w') as outf:
-        run(outf)
+    

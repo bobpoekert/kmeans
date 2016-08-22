@@ -1,5 +1,6 @@
 import _kmeans
 import cstruct
+import numpy as np
 
 class CudaDeviceProps(cstruct.CStruct):
 
@@ -69,7 +70,31 @@ class CudaDeviceProps(cstruct.CStruct):
         int multiGpuBoardGroupID;
 '''
 
+def set_device(n):
+    assert n <= _kmeans.device_count()
+    _kmeans.set_device(n)
+
+def device_count():
+    return _kmeans.device_count()
+
 def device_props(device_id):
     res = CudaDeviceProps()
     res.unpack(_kmeans.device_props(device_id))
     return res
+
+def raw_kmeans(points, k, iterations=50, threshold=0.000001):
+    assert len(points.shape) == 2
+    #label_arr = np.empty(points.shape[0], dtype=np.int32)
+    label_arr = np.random.randint(k, size=points.shape[0])
+    label_arr = np.require(label_arr, dtype=np.int32, requirements=['C_CONTIGUOUS', 'WRITEABLE', 'ALIGNED'])
+    points = np.require(points, dtype=np.float32, requirements=['C_CONTIGUOUS', 'WRITEABLE', 'ALIGNED'])
+    res = _kmeans.kmeans(points, label_arr, iterations, k, threshold)
+    print label_arr.shape, label_arr.dtype
+    #print np.amax(label_arr)
+    return res
+
+
+
+
+
+
